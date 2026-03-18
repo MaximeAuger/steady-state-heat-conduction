@@ -211,7 +211,7 @@ If you use this code in your research or projects, please cite:
                    Integral Boundary Condition}},
   year         = {2026},
   url          = {https://github.com/MaximeAuger/steady-state-heat-conduction},
-  institution  = {FEMTO-ST Institute, Dept. of Applied Mechanics, ENSMM}
+  institution  = {FEMTO-ST Institute, Dept. of Applied Mechanics, SUPMICROTECH}
 }
 ```
 
