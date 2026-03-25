@@ -10,7 +10,7 @@ from scipy import sparse
 from scipy.sparse.linalg import spsolve
 
 DTYPE = torch.float64
-DEVICE = "cpu"
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # ============================================================
@@ -28,8 +28,8 @@ def gauss_legendre_torch(n, a=0.0, b=1.0):
     """Noeuds et poids GL sur [a, b] (PyTorch tensors, shape (n, 1))."""
     x, w = gauss_legendre(n, a, b)
     return (
-        torch.tensor(x, dtype=DTYPE).reshape(-1, 1),
-        torch.tensor(w, dtype=DTYPE).reshape(-1, 1),
+        torch.tensor(x, dtype=DTYPE, device=DEVICE).reshape(-1, 1),
+        torch.tensor(w, dtype=DTYPE, device=DEVICE).reshape(-1, 1),
     )
 
 
@@ -164,10 +164,10 @@ def compute_errors_2d(net, u_exact_fn, u_dx_fn=None, u_dy_fn=None, n_eval=100):
     u_ex = u_exact_fn(xx, yy)
 
     xy_flat = np.column_stack([xx.ravel(), yy.ravel()])
-    xy_t = torch.tensor(xy_flat, dtype=DTYPE)
+    xy_t = torch.tensor(xy_flat, dtype=DTYPE, device=DEVICE)
 
     with torch.no_grad():
-        u_pred_flat = net(xy_t).cpu().numpy().flatten()
+        u_pred_flat = net(xy_t).detach().cpu().numpy().flatten()
     u_pred = u_pred_flat.reshape(n_eval, n_eval)
 
     err = u_pred - u_ex
@@ -182,13 +182,13 @@ def compute_errors_2d(net, u_exact_fn, u_dx_fn=None, u_dy_fn=None, n_eval=100):
     }
 
     if u_dx_fn is not None and u_dy_fn is not None:
-        xy_t2 = torch.tensor(xy_flat, dtype=DTYPE)
+        xy_t2 = torch.tensor(xy_flat, dtype=DTYPE, device=DEVICE)
         xy_t2.requires_grad_(True)
         u_p = net(xy_t2)
         g = torch.autograd.grad(u_p, xy_t2, torch.ones_like(u_p),
                                 create_graph=False)[0]
-        du_dx_pred = g[:, 0].detach().numpy().reshape(n_eval, n_eval)
-        du_dy_pred = g[:, 1].detach().numpy().reshape(n_eval, n_eval)
+        du_dx_pred = g[:, 0].detach().cpu().numpy().reshape(n_eval, n_eval)
+        du_dy_pred = g[:, 1].detach().cpu().numpy().reshape(n_eval, n_eval)
 
         du_dx_ex = u_dx_fn(xx, yy)
         du_dy_ex = u_dy_fn(xx, yy)

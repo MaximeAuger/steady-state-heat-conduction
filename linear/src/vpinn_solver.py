@@ -105,13 +105,14 @@ class VPINNData:
         f_vals = f_source_np(x_np)  # (N_quad,)
 
         self.n_test = n_test
-        self.x_q = torch.tensor(x_np, dtype=DTYPE).reshape(-1, 1)
-        self.w_q = torch.tensor(w_np, dtype=DTYPE).reshape(-1, 1)
-        self.dV = torch.tensor(dV, dtype=DTYPE)
+        self.x_q = torch.tensor(x_np, dtype=DTYPE, device=DEVICE).reshape(-1, 1)
+        self.w_q = torch.tensor(w_np, dtype=DTYPE, device=DEVICE).reshape(-1, 1)
+        self.dV = torch.tensor(dV, dtype=DTYPE, device=DEVICE)
         self.int_f_v = torch.tensor(
             np.sum(w_np[:, None] * f_vals[:, None] * V, axis=0), dtype=DTYPE,
+            device=DEVICE,
         )
-        self.v_at_0 = torch.tensor(tf.v_at_zero(), dtype=DTYPE)
+        self.v_at_0 = torch.tensor(tf.v_at_zero(), dtype=DTYPE, device=DEVICE)
 
 
 # -------------------------------------------------------------------
@@ -182,12 +183,12 @@ def train_vpinn(config=None, verbose=True):
 
     # Network + Lagrange multiplier
     net = MLP(1, 1, cfg["n_hidden"], cfg["n_layers"]).to(DTYPE).to(DEVICE)
-    lam = torch.nn.Parameter(torch.tensor([0.0], dtype=DTYPE))
+    lam = torch.nn.Parameter(torch.tensor([0.0], dtype=DTYPE, device=DEVICE))
 
     # Pre-computed data
     vd = VPINNData(cfg["n_test"], cfg["n_quad"])
-    x_0 = torch.tensor([[0.0]], dtype=DTYPE)
-    x_1 = torch.tensor([[1.0]], dtype=DTYPE)
+    x_0 = torch.tensor([[0.0]], dtype=DTYPE, device=DEVICE)
+    x_1 = torch.tensor([[1.0]], dtype=DTYPE, device=DEVICE)
     x_qg, w_qg = gauss_legendre_torch(cfg["n_q_global"])
 
     all_params = list(net.parameters()) + [lam]

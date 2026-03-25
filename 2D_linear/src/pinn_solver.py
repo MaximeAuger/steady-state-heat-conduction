@@ -41,20 +41,20 @@ def _make_points(cfg):
     nb = cfg["n_b"]
 
     # Points interieurs : grille uniforme dans (0.01, 0.99)^2
-    x1d = torch.linspace(0.01, 0.99, nf, dtype=DTYPE)
-    y1d = torch.linspace(0.01, 0.99, nf, dtype=DTYPE)
+    x1d = torch.linspace(0.01, 0.99, nf, dtype=DTYPE, device=DEVICE)
+    y1d = torch.linspace(0.01, 0.99, nf, dtype=DTYPE, device=DEVICE)
     xx, yy = torch.meshgrid(x1d, y1d, indexing='ij')
     xy_f = torch.stack([xx.flatten(), yy.flatten()], dim=1)  # (nf^2, 2)
     xy_f.requires_grad_(True)
 
     # Bords Dirichlet (u=0)
-    t = torch.linspace(0, 1, nb, dtype=DTYPE)
-    xy_right = torch.stack([torch.ones(nb, dtype=DTYPE), t], dim=1)
-    xy_bottom = torch.stack([t, torch.zeros(nb, dtype=DTYPE)], dim=1)
-    xy_top = torch.stack([t, torch.ones(nb, dtype=DTYPE)], dim=1)
+    t = torch.linspace(0, 1, nb, dtype=DTYPE, device=DEVICE)
+    xy_right = torch.stack([torch.ones(nb, dtype=DTYPE, device=DEVICE), t], dim=1)
+    xy_bottom = torch.stack([t, torch.zeros(nb, dtype=DTYPE, device=DEVICE)], dim=1)
+    xy_top = torch.stack([t, torch.ones(nb, dtype=DTYPE, device=DEVICE)], dim=1)
 
     # Bord gauche : points y pour la condition integrale (eviter les coins)
-    y_left = torch.linspace(0.01, 0.99, cfg["n_q_y"], dtype=DTYPE)
+    y_left = torch.linspace(0.01, 0.99, cfg["n_q_y"], dtype=DTYPE, device=DEVICE)
 
     # Quadrature GL en x pour calculer int_0^1 u(x, y_j) dx
     x_quad, w_quad = gauss_legendre_torch(cfg["n_q_x"])
@@ -82,7 +82,7 @@ def _loss_pinn(net, xy_f, xy_right, xy_bottom, xy_top,
     n_qx = len(x_quad)
 
     # u(0, y_j)
-    xy_0 = torch.stack([torch.zeros(n_y, dtype=DTYPE), y_left], dim=1)
+    xy_0 = torch.stack([torch.zeros(n_y, dtype=DTYPE, device=DEVICE), y_left], dim=1)
     u_0 = net(xy_0)  # (n_y, 1)
 
     # int_0^1 u(x, y_j) dx pour chaque y_j
@@ -175,10 +175,10 @@ def train_pinn(config=None, verbose=True):
 
     # Erreur contrainte integrale (max sur y)
     with torch.no_grad():
-        y_test = torch.linspace(0.01, 0.99, 50, dtype=DTYPE)
+        y_test = torch.linspace(0.01, 0.99, 50, dtype=DTYPE, device=DEVICE)
         n_y = len(y_test)
         n_qx = len(x_quad)
-        xy_0 = torch.stack([torch.zeros(n_y, dtype=DTYPE), y_test], dim=1)
+        xy_0 = torch.stack([torch.zeros(n_y, dtype=DTYPE, device=DEVICE), y_test], dim=1)
         u_0 = net(xy_0).squeeze()
 
         y_rep = y_test.repeat_interleave(n_qx)

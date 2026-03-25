@@ -12,7 +12,7 @@ import torch
 from numpy.polynomial import legendre as leg
 
 DTYPE = torch.float64
-DEVICE = "cpu"
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # ===================================================================
@@ -45,8 +45,8 @@ def gauss_legendre_torch(n: int, a: float = 0.0, b: float = 1.0):
     """Gauss-Legendre nodes and weights as PyTorch tensors of shape (n, 1)."""
     x, w = gauss_legendre(n, a, b)
     return (
-        torch.tensor(x, dtype=DTYPE).reshape(-1, 1),
-        torch.tensor(w, dtype=DTYPE).reshape(-1, 1),
+        torch.tensor(x, dtype=DTYPE, device=DEVICE).reshape(-1, 1),
+        torch.tensor(w, dtype=DTYPE, device=DEVICE).reshape(-1, 1),
     )
 
 
@@ -183,9 +183,9 @@ def compute_errors(net, u_exact_fn, u_deriv_fn=None, n_eval: int = 1000):
     u_ex = u_exact_fn(x_np)
     dx = 1.0 / (n_eval - 1)
 
-    x_t = torch.tensor(x_np, dtype=DTYPE).reshape(-1, 1)
+    x_t = torch.tensor(x_np, dtype=DTYPE, device=DEVICE).reshape(-1, 1)
     with torch.no_grad():
-        u_pred = net(x_t).cpu().numpy().flatten()
+        u_pred = net(x_t).detach().cpu().numpy().flatten()
 
     err = u_pred - u_ex
     l2 = np.sqrt(np.trapz(err ** 2, dx=dx))
@@ -197,7 +197,7 @@ def compute_errors(net, u_exact_fn, u_deriv_fn=None, n_eval: int = 1000):
     }
 
     if u_deriv_fn is not None:
-        x_t2 = torch.tensor(x_np, dtype=DTYPE).reshape(-1, 1)
+        x_t2 = torch.tensor(x_np, dtype=DTYPE, device=DEVICE).reshape(-1, 1)
         x_t2.requires_grad_(True)
         u_p = net(x_t2)
         du_p = diff(u_p, x_t2, 1).detach().cpu().numpy().flatten()

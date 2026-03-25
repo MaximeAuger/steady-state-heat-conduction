@@ -23,6 +23,8 @@ from exact_solution import (
     k_conductivity, dk_conductivity,
 )
 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 # ===================================================================
 # 1. Gauss-Legendre quadrature on [a, b]
@@ -126,9 +128,9 @@ def compute_errors(net, u_exact_fn, u_deriv_fn=None, n_eval=1000):
     x_np = np.linspace(0, 1, n_eval)
     u_ex = u_exact_fn(x_np)
 
-    x_t = torch.tensor(x_np.reshape(-1, 1), dtype=DTYPE, requires_grad=True)
+    x_t = torch.tensor(x_np.reshape(-1, 1), dtype=DTYPE, device=DEVICE, requires_grad=True)
     with torch.no_grad():
-        u_pr = net(x_t).numpy().ravel()
+        u_pr = net(x_t).detach().cpu().numpy().ravel()
 
     err = u_pr - u_ex
     dx = 1.0 / (n_eval - 1)
@@ -143,10 +145,10 @@ def compute_errors(net, u_exact_fn, u_deriv_fn=None, n_eval=1000):
 
     if u_deriv_fn is not None:
         du_ex = u_deriv_fn(x_np)
-        x_t2 = torch.tensor(x_np.reshape(-1, 1), dtype=DTYPE, requires_grad=True)
+        x_t2 = torch.tensor(x_np.reshape(-1, 1), dtype=DTYPE, device=DEVICE, requires_grad=True)
         u_t2 = net(x_t2)
         du_t2 = diff(u_t2, x_t2, order=1)
-        du_pr = du_t2.detach().numpy().ravel()
+        du_pr = du_t2.detach().cpu().numpy().ravel()
         derr = du_pr - du_ex
         H1_semi = np.sqrt(np.trapz(derr ** 2, dx=dx))
         out["H1_semi"] = H1_semi

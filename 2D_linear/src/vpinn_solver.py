@@ -94,15 +94,15 @@ class VPINNData2D:
         self.n_test_x = n_test_x
         self.n_test_y = n_test_y
 
-        self.xy_quad = torch.tensor(xy_flat, dtype=DTYPE)       # (NQ, 2)
-        self.wxq = torch.tensor(wxq, dtype=DTYPE)               # (n_quad_x,)
-        self.wyq = torch.tensor(wyq, dtype=DTYPE)               # (n_quad_y,)
-        self.V_x = torch.tensor(V_x, dtype=DTYPE)               # (n_quad_x, n_test_x)
-        self.dV_x = torch.tensor(dV_x, dtype=DTYPE)             # (n_quad_x, n_test_x)
-        self.W_y = torch.tensor(W_y, dtype=DTYPE)               # (n_quad_y, n_test_y)
-        self.dW_y = torch.tensor(dW_y, dtype=DTYPE)             # (n_quad_y, n_test_y)
-        self.v_at_0 = torch.tensor(v_at_0, dtype=DTYPE)         # (n_test_x,)
-        self.int_f_vw = torch.tensor(int_f_vw, dtype=DTYPE)     # (n_test_x, n_test_y)
+        self.xy_quad = torch.tensor(xy_flat, dtype=DTYPE, device=DEVICE)
+        self.wxq = torch.tensor(wxq, dtype=DTYPE, device=DEVICE)
+        self.wyq = torch.tensor(wyq, dtype=DTYPE, device=DEVICE)
+        self.V_x = torch.tensor(V_x, dtype=DTYPE, device=DEVICE)
+        self.dV_x = torch.tensor(dV_x, dtype=DTYPE, device=DEVICE)
+        self.W_y = torch.tensor(W_y, dtype=DTYPE, device=DEVICE)
+        self.dW_y = torch.tensor(dW_y, dtype=DTYPE, device=DEVICE)
+        self.v_at_0 = torch.tensor(v_at_0, dtype=DTYPE, device=DEVICE)
+        self.int_f_vw = torch.tensor(int_f_vw, dtype=DTYPE, device=DEVICE)
 
 
 def _loss_vpinn(net, lam, vd, xy_right, xy_bottom, xy_top,
@@ -145,7 +145,7 @@ def _loss_vpinn(net, lam, vd, xy_right, xy_bottom, xy_top,
     n_y = len(y_left)
     n_qx = len(x_quad_bc)
 
-    xy_0 = torch.stack([torch.zeros(n_y, dtype=DTYPE), y_left], dim=1)
+    xy_0 = torch.stack([torch.zeros(n_y, dtype=DTYPE, device=DEVICE), y_left], dim=1)
     u_0 = net(xy_0)  # (n_y, 1)
 
     y_rep = y_left.repeat_interleave(n_qx)
@@ -176,19 +176,19 @@ def train_vpinn(config=None, verbose=True):
     np.random.seed(cfg["seed"])
 
     net = MLP(2, 1, cfg["n_hidden"], cfg["n_layers"]).to(DTYPE).to(DEVICE)
-    lam = torch.nn.Parameter(torch.zeros(cfg["n_test_y"], dtype=DTYPE))
+    lam = torch.nn.Parameter(torch.zeros(cfg["n_test_y"], dtype=DTYPE, device=DEVICE))
 
     vd = VPINNData2D(cfg)
 
     # Points de bord Dirichlet
     nb = cfg["n_b"]
-    t = torch.linspace(0, 1, nb, dtype=DTYPE)
-    xy_right = torch.stack([torch.ones(nb, dtype=DTYPE), t], dim=1)
-    xy_bottom = torch.stack([t, torch.zeros(nb, dtype=DTYPE)], dim=1)
-    xy_top = torch.stack([t, torch.ones(nb, dtype=DTYPE)], dim=1)
+    t = torch.linspace(0, 1, nb, dtype=DTYPE, device=DEVICE)
+    xy_right = torch.stack([torch.ones(nb, dtype=DTYPE, device=DEVICE), t], dim=1)
+    xy_bottom = torch.stack([t, torch.zeros(nb, dtype=DTYPE, device=DEVICE)], dim=1)
+    xy_top = torch.stack([t, torch.ones(nb, dtype=DTYPE, device=DEVICE)], dim=1)
 
     # Bord gauche pour BC integrale
-    y_left = torch.linspace(0.01, 0.99, cfg["n_q_bc_y"], dtype=DTYPE)
+    y_left = torch.linspace(0.01, 0.99, cfg["n_q_bc_y"], dtype=DTYPE, device=DEVICE)
     x_quad_bc, w_quad_bc = gauss_legendre_torch(cfg["n_q_bc_x"])
 
     all_params = list(net.parameters()) + [lam]
@@ -254,10 +254,10 @@ def train_vpinn(config=None, verbose=True):
 
     # Erreur contrainte integrale (max sur y)
     with torch.no_grad():
-        y_test = torch.linspace(0.01, 0.99, 50, dtype=DTYPE)
+        y_test = torch.linspace(0.01, 0.99, 50, dtype=DTYPE, device=DEVICE)
         n_y = len(y_test)
         n_qx = len(x_quad_bc)
-        xy_0 = torch.stack([torch.zeros(n_y, dtype=DTYPE), y_test], dim=1)
+        xy_0 = torch.stack([torch.zeros(n_y, dtype=DTYPE, device=DEVICE), y_test], dim=1)
         u_0 = net(xy_0).squeeze()
 
         y_rep = y_test.repeat_interleave(n_qx)
@@ -269,7 +269,7 @@ def train_vpinn(config=None, verbose=True):
         cstr = torch.max(torch.abs(u_0 - ALPHA * ints - G0)).item()
 
     lam_ex = lambda_exact()
-    lam_np = lam.detach().numpy()
+    lam_np = lam.detach().cpu().numpy()
 
     if verbose:
         print(f"    => L2={errors['L2']:.3e} Linf={errors['Linf']:.3e} "

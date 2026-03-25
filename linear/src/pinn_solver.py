@@ -121,10 +121,10 @@ def train_pinn(config=None, verbose=True):
     net = MLP(1, 1, cfg["n_hidden"], cfg["n_layers"]).to(DTYPE).to(DEVICE)
 
     # Collocation and quadrature points
-    x_f = torch.linspace(0.01, 0.99, cfg["n_f"], dtype=DTYPE).reshape(-1, 1)
+    x_f = torch.linspace(0.01, 0.99, cfg["n_f"], dtype=DTYPE, device=DEVICE).reshape(-1, 1)
     x_f.requires_grad_(True)
-    x_0 = torch.tensor([[0.0]], dtype=DTYPE)
-    x_1 = torch.tensor([[1.0]], dtype=DTYPE)
+    x_0 = torch.tensor([[0.0]], dtype=DTYPE, device=DEVICE)
+    x_1 = torch.tensor([[1.0]], dtype=DTYPE, device=DEVICE)
     x_q, w_q = gauss_legendre_torch(cfg["n_q"])
 
     hist = {"loss": [], "loss_pde": [], "loss_D": [], "loss_I": []}

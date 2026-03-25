@@ -33,7 +33,7 @@ from exact_solution import (
     k_conductivity,
 )
 from network import MLP
-from utils import gauss_legendre, LegendreTestFunctions, diff, compute_errors
+from utils import gauss_legendre, LegendreTestFunctions, diff, compute_errors, DEVICE
 
 
 # ===================================================================
@@ -89,11 +89,11 @@ class VPINNData:
         f_vals = f_source(xq, beta=beta)                  # (N_quad,)
         int_f_v = np.sum(wq[:, None] * f_vals[:, None] * V, axis=0)  # (n_test,)
 
-        self.x_q = torch.tensor(xq.reshape(-1, 1), dtype=DTYPE)
-        self.w_q = torch.tensor(wq.reshape(-1, 1), dtype=DTYPE)
-        self.dV = torch.tensor(dV, dtype=DTYPE)
-        self.int_f_v = torch.tensor(int_f_v, dtype=DTYPE)
-        self.v_at_0 = torch.tensor(v0, dtype=DTYPE)
+        self.x_q = torch.tensor(xq.reshape(-1, 1), dtype=DTYPE, device=DEVICE)
+        self.w_q = torch.tensor(wq.reshape(-1, 1), dtype=DTYPE, device=DEVICE)
+        self.dV = torch.tensor(dV, dtype=DTYPE, device=DEVICE)
+        self.int_f_v = torch.tensor(int_f_v, dtype=DTYPE, device=DEVICE)
+        self.v_at_0 = torch.tensor(v0, dtype=DTYPE, device=DEVICE)
 
 
 # ===================================================================
@@ -165,18 +165,18 @@ def train_vpinn(config=None, verbose=True):
         print(f"[VPINN] Starting training (beta={beta})")
 
     # --- Network + Lagrange multiplier ---
-    net = MLP(1, 1, cfg["n_hidden"], cfg["n_layers"]).to(DTYPE)
-    lam = torch.nn.Parameter(torch.tensor([0.0], dtype=DTYPE))
+    net = MLP(1, 1, cfg["n_hidden"], cfg["n_layers"]).to(DTYPE).to(DEVICE)
+    lam = torch.nn.Parameter(torch.tensor([0.0], dtype=DTYPE, device=DEVICE))
 
     # --- Pre-computed data ---
     vd = VPINNData(cfg)
 
     # --- Boundary / integral quadrature ---
-    x_0 = torch.tensor([[0.0]], dtype=DTYPE)
-    x_1 = torch.tensor([[1.0]], dtype=DTYPE)
+    x_0 = torch.tensor([[0.0]], dtype=DTYPE, device=DEVICE)
+    x_1 = torch.tensor([[1.0]], dtype=DTYPE, device=DEVICE)
     xqg_np, wqg_np = gauss_legendre(cfg["n_q_global"])
-    x_qg = torch.tensor(xqg_np.reshape(-1, 1), dtype=DTYPE)
-    w_qg = torch.tensor(wqg_np.reshape(-1, 1), dtype=DTYPE)
+    x_qg = torch.tensor(xqg_np.reshape(-1, 1), dtype=DTYPE, device=DEVICE)
+    w_qg = torch.tensor(wqg_np.reshape(-1, 1), dtype=DTYPE, device=DEVICE)
 
     # --- History ---
     hist = {"loss": [], "loss_weak": [], "loss_D": [], "loss_I": []}
