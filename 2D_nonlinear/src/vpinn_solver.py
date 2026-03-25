@@ -1,0 +1,250 @@
+"""
+VPINN solver 2D non-lineaire — formulation faible avec k(u).
+
+EDP :  -div(k(u)*grad(u)) = f(x,y),  k(u) = 1 + beta*u^2
+
+Forme faible :
+    int int k(u)*[u_x*v_i'*w_j + u_y*v_i*w_j'] dxdy
+    - v_i(0)*lam_j/2
+    - int int f*v_i*w_j dxdy = 0
+
+Difference cle vs lineaire : k(u) multiplie les termes de gradient
+et doit etre recalcule a chaque iteration (depend du reseau).
+
+    train_vpinn(config, verbose) -> dict de resultats
+"""
+
+import time
+import numpy as np
+import torch
+import torch.optim as optim
+
+from network import MLP
+from exact_solution import (
+    ALPHA, G0, DTYPE, BETA_DEFAULT, lambda_exact,
+    f_source_np, u_exact_np, u_exact_dx_np, u_exact_dy_np,
+)
+from utils import (
+    gauss_legendre, gauss_legendre_torch,
+    LegendreTestFunctions, SineTestFunctions,
+    grad_net, compute_errors_2d, DEVICE,
+)
+
+DEFAULT_CONFIG = {
+    "n_hidden": 64,
+    "n_layers": 5,
+    "n_test_x": 15,
+    "n_test_y": 5,
+    "n_quad_x": 40,
+    "n_quad_y": 30,
+    "n_q_bc_x": 64,
+    "n_q_bc_y": 50,
+    "n_b": 100,
+    "w_w": 20.0,
+    "w_d": 100.0,
+    "w_i": 100.0,
+    "lr_adam": 1e-3,
+    "n_adam": 20000,
+    "n_lbfgs": 5000,
+    "seed": 42,
+    "beta": BETA_DEFAULT,
+}
+
+
+class VPINNData2D:
+    """Pre-calcule quadrature, fonctions test et integrales source."""
+
+    def __init__(self, cfg):
+        n_test_x = cfg["n_test_x"]
+        n_test_y = cfg["n_test_y"]
+        n_quad_x = cfg["n_quad_x"]
+        n_quad_y = cfg["n_quad_y"]
+        beta = cfg["beta"]
+
+        tf_x = LegendreTestFunctions(n_test_x)
+        xq, wxq = gauss_legendre(n_quad_x, 0.0, 1.0)
+        V_x = tf_x.eval_v(xq)
+        dV_x = tf_x.eval_dv(xq)
+        v_at_0 = tf_x.v_at_zero()
+
+        tf_y = SineTestFunctions(n_test_y)
+        yq, wyq = gauss_legendre(n_quad_y, 0.0, 1.0)
+        W_y = tf_y.eval_w(yq)
+        dW_y = tf_y.eval_dw(yq)
+
+        xx, yy = np.meshgrid(xq, yq, indexing='ij')
+        xy_flat = np.column_stack([xx.ravel(), yy.ravel()])
+        w2d_np = np.outer(wxq, wyq)
+
+        # Pre-calcul int int f(x,y,beta) * v_i * w_j dxdy
+        f_vals = f_source_np(xx, yy, beta)
+        int_f_vw = np.einsum('pq,pi,qj,pq->ij', w2d_np, V_x, W_y, f_vals)
+
+        self.n_quad_x = n_quad_x
+        self.n_quad_y = n_quad_y
+        self.n_test_x = n_test_x
+        self.n_test_y = n_test_y
+
+        self.xy_quad = torch.tensor(xy_flat, dtype=DTYPE)
+        self.wxq = torch.tensor(wxq, dtype=DTYPE)
+        self.wyq = torch.tensor(wyq, dtype=DTYPE)
+        self.V_x = torch.tensor(V_x, dtype=DTYPE)
+        self.dV_x = torch.tensor(dV_x, dtype=DTYPE)
+        self.W_y = torch.tensor(W_y, dtype=DTYPE)
+        self.dW_y = torch.tensor(dW_y, dtype=DTYPE)
+        self.v_at_0 = torch.tensor(v_at_0, dtype=DTYPE)
+        self.int_f_vw = torch.tensor(int_f_vw, dtype=DTYPE)
+
+
+def _loss_vpinn(net, lam, vd, xy_right, xy_bottom, xy_top,
+                y_left, x_quad_bc, w_quad_bc, cfg):
+    beta = cfg["beta"]
+
+    # --- Residus faibles avec k(u) ---
+    xy_q = vd.xy_quad.clone().detach().requires_grad_(True)
+    u_q = net(xy_q)
+    u_x, u_y = grad_net(u_q, xy_q)
+
+    # k(u) aux points de quadrature
+    k_u = 1.0 + beta * u_q ** 2
+
+    ux_2d = u_x.reshape(vd.n_quad_x, vd.n_quad_y)
+    uy_2d = u_y.reshape(vd.n_quad_x, vd.n_quad_y)
+    ku_2d = k_u.reshape(vd.n_quad_x, vd.n_quad_y)
+
+    w2d = vd.wxq[:, None] * vd.wyq[None, :]
+
+    # int int k(u)*u_x * v_i'(x) * w_j(y) dxdy
+    term1 = torch.einsum('pq,pq,pi,qj->ij', w2d, ku_2d * ux_2d, vd.dV_x, vd.W_y)
+    # int int k(u)*u_y * v_i(x) * w_j'(y) dxdy
+    term2 = torch.einsum('pq,pq,pi,qj->ij', w2d, ku_2d * uy_2d, vd.V_x, vd.dW_y)
+
+    boundary = vd.v_at_0[:, None] * lam[None, :] / 2.0
+
+    R = term1 + term2 - boundary - vd.int_f_vw
+    l_w = torch.mean(R ** 2)
+
+    # --- Dirichlet ---
+    l_right = torch.mean(net(xy_right) ** 2)
+    l_bottom = torch.mean(net(xy_bottom) ** 2)
+    l_top = torch.mean(net(xy_top) ** 2)
+    l_D = l_right + l_bottom + l_top
+
+    # --- BC integrale ---
+    n_y = len(y_left)
+    n_qx = len(x_quad_bc)
+    xy_0 = torch.stack([torch.zeros(n_y, dtype=DTYPE), y_left], dim=1)
+    u_0 = net(xy_0)
+
+    y_rep = y_left.repeat_interleave(n_qx)
+    x_rep = x_quad_bc.squeeze().repeat(n_y)
+    xy_bc = torch.stack([x_rep, y_rep], dim=1)
+    u_bc = net(xy_bc).reshape(n_y, n_qx)
+    integrals = torch.sum(w_quad_bc.squeeze() * u_bc, dim=1, keepdim=True)
+
+    r_I = u_0 - ALPHA * integrals - G0
+    l_I = torch.mean(r_I ** 2)
+
+    loss = cfg["w_w"] * l_w + cfg["w_d"] * l_D + cfg["w_i"] * l_I
+    return loss, l_w, l_D, l_I
+
+
+def train_vpinn(config=None, verbose=True):
+    cfg = {**DEFAULT_CONFIG, **(config or {})}
+    torch.manual_seed(cfg["seed"])
+    np.random.seed(cfg["seed"])
+
+    beta = cfg["beta"]
+    net = MLP(2, 1, cfg["n_hidden"], cfg["n_layers"]).to(DTYPE).to(DEVICE)
+    lam = torch.nn.Parameter(torch.zeros(cfg["n_test_y"], dtype=DTYPE))
+
+    vd = VPINNData2D(cfg)
+
+    nb = cfg["n_b"]
+    t = torch.linspace(0, 1, nb, dtype=DTYPE)
+    xy_right = torch.stack([torch.ones(nb, dtype=DTYPE), t], dim=1)
+    xy_bottom = torch.stack([t, torch.zeros(nb, dtype=DTYPE)], dim=1)
+    xy_top = torch.stack([t, torch.ones(nb, dtype=DTYPE)], dim=1)
+
+    y_left = torch.linspace(0.01, 0.99, cfg["n_q_bc_y"], dtype=DTYPE)
+    x_quad_bc, w_quad_bc = gauss_legendre_torch(cfg["n_q_bc_x"])
+
+    all_params = list(net.parameters()) + [lam]
+    hist = {"loss": [], "loss_weak": [], "loss_D": [], "loss_I": []}
+
+    if verbose:
+        n_params = sum(p.numel() for p in net.parameters())
+        print(f"  VPINN 2D NL | {cfg['n_hidden']}x{cfg['n_layers']} ({n_params} params) | "
+              f"N_test={cfg['n_test_x']}x{cfg['n_test_y']} | beta={beta} | seed={cfg['seed']}")
+
+    t0 = time.time()
+
+    opt = optim.Adam(all_params, lr=cfg["lr_adam"])
+    for ep in range(cfg["n_adam"]):
+        opt.zero_grad()
+        loss, lw, ld, li = _loss_vpinn(
+            net, lam, vd, xy_right, xy_bottom, xy_top,
+            y_left, x_quad_bc, w_quad_bc, cfg)
+        loss.backward()
+        opt.step()
+        hist["loss"].append(loss.item())
+        hist["loss_weak"].append(lw.item())
+        hist["loss_D"].append(ld.item())
+        hist["loss_I"].append(li.item())
+        if verbose and (ep + 1) % (cfg["n_adam"] // 3) == 0:
+            print(f"    Adam {ep+1:6d} | L={loss.item():.3e} W={lw.item():.3e} "
+                  f"D={ld.item():.3e} I={li.item():.3e} lam0={lam[0].item():.3f}")
+
+    opt2 = optim.LBFGS(all_params, lr=1.0, max_iter=20,
+                       history_size=50, line_search_fn="strong_wolfe")
+    it = [0]
+
+    def closure():
+        opt2.zero_grad()
+        loss, lw, ld, li = _loss_vpinn(
+            net, lam, vd, xy_right, xy_bottom, xy_top,
+            y_left, x_quad_bc, w_quad_bc, cfg)
+        loss.backward()
+        hist["loss"].append(loss.item())
+        hist["loss_weak"].append(lw.item())
+        hist["loss_D"].append(ld.item())
+        hist["loss_I"].append(li.item())
+        it[0] += 1
+        if verbose and it[0] % (max(1, cfg["n_lbfgs"] // 3)) == 0:
+            print(f"    LBFGS {it[0]:5d} | L={loss.item():.3e}")
+        return loss
+
+    for _ in range(cfg["n_lbfgs"]):
+        opt2.step(closure)
+        if it[0] >= cfg["n_lbfgs"]:
+            break
+
+    elapsed = time.time() - t0
+
+    errors = compute_errors_2d(net, u_exact_np, u_exact_dx_np, u_exact_dy_np)
+
+    with torch.no_grad():
+        y_test = torch.linspace(0.01, 0.99, 50, dtype=DTYPE)
+        n_y = len(y_test)
+        n_qx = len(x_quad_bc)
+        xy_0 = torch.stack([torch.zeros(n_y, dtype=DTYPE), y_test], dim=1)
+        u_0 = net(xy_0).squeeze()
+        y_rep = y_test.repeat_interleave(n_qx)
+        x_rep = x_quad_bc.squeeze().repeat(n_y)
+        xy_q = torch.stack([x_rep, y_rep], dim=1)
+        u_q = net(xy_q).reshape(n_y, n_qx)
+        ints = torch.sum(w_quad_bc.squeeze() * u_q, dim=1)
+        cstr = torch.max(torch.abs(u_0 - ALPHA * ints - G0)).item()
+
+    lam_ex = lambda_exact(beta)
+    lam_np = lam.detach().numpy()
+
+    if verbose:
+        print(f"    => L2={errors['L2']:.3e} Linf={errors['Linf']:.3e} "
+              f"H1={errors.get('H1', float('nan')):.3e} Cstr={cstr:.3e} "
+              f"lam0={lam_np[0]:.4f} (exact={lam_ex[0]:.4f}) ({elapsed:.1f}s)")
+
+    return {
+        "net": net, "lam": lam_np.copy(), "history": hist, "errors": errors,
+        "constraint_error": cstr, "time": elapsed, "config": cfg,
+    }

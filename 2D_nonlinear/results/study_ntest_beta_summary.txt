@@ -1,0 +1,37 @@
+================================================================================
+  ETUDE COMPLEMENTAIRE : Carte de precision VPINN (N_test x beta)
+================================================================================
+
+Question : peut-on sauver le VPINN a beta=5 en augmentant N_test ?
+
+--- Erreur L2 VPINN ---
+      N_test  beta=0.0  beta=0.5  beta=1.0  beta=2.0  beta=5.0
+--------------------------------------------------------------
+   5x3 ( 15)   8.10e-03   1.04e-02   1.22e-02   1.49e-02   2.00e-01
+  10x3 ( 30)   8.09e-03   1.45e-02   1.22e-02   2.74e-02   2.02e-01
+  15x5 ( 75)   8.03e-04   7.05e-04   9.65e-04   3.82e-03   3.19e-02
+  20x5 (100)   1.11e-03   4.26e-04   9.52e-04   3.26e-03   4.03e-02
+  25x8 (200)   1.81e-04   1.23e-04   2.06e-04   3.30e-04   1.71e-02
+ 30x10 (300)   2.96e-04   1.89e-04   1.61e-04   4.85e-04   1.04e-02
+
+--- PINN reference ---
+  beta=0.0: L2=4.740e-05
+  beta=0.5: L2=1.538e-04
+  beta=1.0: L2=1.697e-04
+  beta=2.0: L2=8.077e-04
+  beta=5.0: L2=7.134e-04
+
+--- Focus beta=5 ---
+  N_test min (5x3):  L2 = 2.002e-01
+  N_test max (30x10): L2 = 1.042e-02
+  Amelioration :           x19.2
+  PINN reference :         L2 = 7.134e-04
+  Ratio final VPINN/PINN : 14.6x
+
+  CONCLUSION : Le VPINN reste 15x moins precis que le PINN
+  a beta=5, meme avec N_test=300.
+  La formulation forte (PINN) est nettement superieure pour
+  les non-linearites fortes en 2D.
+
+Temps total : 10911.7 s (181.9 min)
+================================================================================

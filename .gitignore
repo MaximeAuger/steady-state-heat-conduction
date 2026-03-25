@@ -26,3 +26,6 @@ Thumbs.db
 
 # Pickle (raw results — regenerate with run_all.py)
 *.pkl
+
+# Logs
+*.log

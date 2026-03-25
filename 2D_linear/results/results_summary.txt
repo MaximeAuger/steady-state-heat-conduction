@@ -1,0 +1,41 @@
+======================================================================
+  RESUME -- PINN vs VPINN : Poisson 2D + Condition integrale
+======================================================================
+
+Probleme : -Delta u(x,y) = f(x,y), (x,y) in (0,1)^2
+           u(0,y) = int_0^1 u(x,y) dx   (condition integrale)
+           u(1,y) = u(x,0) = u(x,1) = 0  (Dirichlet)
+Solution : u(x,y) = sin(pi*y) * [sin(pi*x) + (1-x)*4/pi]
+
+--- Comparaison principale (seed=42) ---
+Metrique                                  PINN           VPINN
+--------------------------------------------------------------
+Erreur L2                           3.0893e-05      1.7881e-03
+Erreur Linf                         2.3652e-04      6.6810e-03
+Erreur H1                           7.0494e-04      3.8640e-02
+Cstr. integrale                     2.2133e-04      2.7272e-04
+Temps (s)                               1108.0          1877.1
+Lambda_0                                    --         -1.8680
+Lambda_0 exact                              --         -1.8684
+
+--- Validation FDM ---
+  FDM N=20    Linf = 3.0358e-03
+  FDM N=50    Linf = 4.8559e-04
+  FDM N=100   Linf = 1.2139e-04
+  FDM N=200   Linf = 3.0349e-05
+
+--- Convergence VPINN vs N_test ---
+    N_test    Total           L2         Linf        Cstr.
+       3x2        6    6.273e-02    1.487e-01    4.475e-04
+       5x3       15    8.229e-03    2.611e-02    3.193e-04
+      10x3       30    8.136e-03    1.957e-02    2.759e-04
+      15x5       75    7.713e-04    2.896e-03    7.109e-04
+      20x5      100    1.091e-03    3.715e-03    7.179e-04
+      25x8      200    1.922e-04    6.863e-04    5.242e-04
+
+--- Robustesse (5 seeds) ---
+  PINN L2 : moy=5.160e-05 std=8.097e-06 min=3.880e-05 max=6.235e-05
+  VPINN L2 : moy=7.034e-04 std=1.530e-04 min=4.270e-04 max=8.659e-04
+
+Temps total d'execution : 9501.0 s
+======================================================================

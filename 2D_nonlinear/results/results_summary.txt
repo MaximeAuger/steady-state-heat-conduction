@@ -1,0 +1,33 @@
+======================================================================
+  RESUME -- PINN vs VPINN : Conduction 2D NL + Condition integrale
+======================================================================
+
+EDP : -div(k(u)*grad(u)) = f(x,y), k(u) = 1 + beta*u^2
+      u(0,y) = int u dx,  Dirichlet sur 3 bords
+Solution : u(x,y) = sin(pi*y) * [sin(pi*x) + (1-x)*4/pi]
+
+--- Comparaison principale (beta=1, seed=42) ---
+Metrique                          PINN        VPINN
+---------------------------------------------------
+L2                          7.1357e-05   5.1611e-04
+Linf                        4.1597e-04   2.0707e-03
+H1                          1.2317e-03   1.2621e-02
+Cstr                        4.2779e-04   4.6122e-04
+Temps (s)                       1123.6        578.6
+FDM Linf                    1.8906e-04
+Lambda_0                            --      -4.1411 (exact=-4.1400)
+
+--- Beta sweep ---
+  beta      PINN L2     VPINN L2      Ratio
+   0.0    4.740e-05    7.457e-04        0.1x
+   0.5    1.538e-04    6.494e-04        0.2x
+   1.0    1.697e-04    3.090e-04        0.5x
+   2.0    8.077e-04    3.254e-03        0.2x
+   5.0    7.134e-04    2.615e-02        0.0x
+
+--- Robustesse (5 seeds, beta=1) ---
+  PINN L2: moy=2.918e-04 std=8.780e-05
+  VPINN L2: moy=1.023e-03 std=6.341e-04
+
+Temps total : 16283.9 s
+======================================================================
